@@ -1,6 +1,10 @@
+#define _BSD_SOURCE
+
 #include <err.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -19,6 +23,64 @@ wait_for_ok(int fd) {
 	} while (1);
 	read(fd, buf, 1);
 	read(fd, buf, 1);
+}
+
+ssize_t
+xb_write(int fd, const char *buf, size_t count) {
+	ssize_t ret;
+
+	while (count > 0) {
+		ret = write(fd, buf, count);
+
+		if (ret <= 0) {
+			return -1;
+		}
+
+		count -= ret;
+		buf += ret;
+	}
+
+	return 0;
+}
+
+int
+xb_send_command(int fd, char *cmd, const char *format, ...) {
+	char buf[256];
+	size_t off = 0;
+	ssize_t ret;
+	va_list ap;
+
+//	if (api_mode)
+//	else
+	buf[0] = 'A';
+	buf[1] = 'T';
+	buf[2] = cmd[0];
+	buf[3] = cmd[1];
+	off = 4;
+
+	if (*format) {
+		va_start(ap, format);
+		ret = vsnprintf(buf + off, sizeof(buf) - off, format, ap);
+		va_end(ap);
+
+		if (ret < 0 || ret >= sizeof(buf)) {
+			return -1;
+		}
+
+		off += ret;
+	}
+
+//	if (api_mode)
+//	else
+	buf[off++] = '\r';
+
+	ret = xb_write(fd, buf, off);
+
+//	if (api_mode)
+//	else
+	wait_for_ok(fd);
+
+	return ret;
 }
 
 int
@@ -44,8 +106,7 @@ main() {
 	wait_for_ok(fd);
 
 	/* start the power cycle */
-	write(fd, "ATFR\r", 5);
-	wait_for_ok(fd);
+	xb_send_command(fd, "FR", "");
 
 	/* assert DTR, clear RTS */
 	i = TIOCM_DTR | TIOCM_CTS;
