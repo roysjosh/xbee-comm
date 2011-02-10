@@ -33,6 +33,14 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define AP_MODE_AT	0
+#define AP_MODE_API	1
+#define AP_MODE_API_ESC	2
+
+int api_mode = 0;
+extern char *optarg;
+extern int optind;
+
 void
 wait_for_ok(int fd) {
 	char buf[1];
@@ -269,22 +277,51 @@ xb_firmware_update(int xbfd, int fwfd) {
 	return 0;
 }
 
+void
+usage(const char *argv0, int status) {
+	fprintf(stderr, "Usage: %s [-A api_mode] [-d /dev/ttyX] firmware.ebl\n", argv0);
+	exit(status);
+}
+
 int
 main(int argc, char *argv[]) {
 	char buf[1024];
+	const char *fwfile, *ttydev = "/dev/ttyUSB0";
 	int fwfd, xbfd, i;
 	ssize_t ret;
 	struct termios serial;
 
-	if (argc < 2) {
-		errx(EXIT_FAILURE, "missing parameter: %s <file.ebl>", argv[0]);
+	while ( (i = getopt(argc, argv, "A:d:")) != -1) {
+		switch (i) {
+		case 'A':
+			api_mode = atoi(optarg);
+
+			if (api_mode < 0 || api_mode > 2) {
+				usage(argv[0], EXIT_FAILURE);
+			}
+
+			break;
+
+		case 'd':
+			ttydev = optarg;
+			break;
+
+		default:
+			usage(argv[0], EXIT_FAILURE);
+		}
 	}
 
-	if ( (fwfd = open(argv[1], O_RDONLY)) < 0) {
-		err(EXIT_FAILURE, "failed to open firmware file: %s", argv[1]);
+	if (optind >= argc) {
+		usage(argv[0], EXIT_FAILURE);
 	}
 
-	if ( (xbfd = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY)) < 0) {
+	fwfile = argv[optind];
+
+	if ( (fwfd = open(fwfile, O_RDONLY)) < 0) {
+		err(EXIT_FAILURE, "failed to open firmware file: %s", fwfile);
+	}
+
+	if ( (xbfd = open(ttydev, O_RDWR | O_NOCTTY)) < 0) {
 		err(EXIT_FAILURE, "failed to open serial console");
 	}
 
