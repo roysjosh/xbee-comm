@@ -1,0 +1,31 @@
+xbee-comm by Joshua Roys <roysjosh@gmail.com>
+
+In order to access the xbee as a regular user, you could do the following:
+# setfacl -m u:`id -un`:rw /dev/ttyUSB0
+
+Firmware files can be downloaded from digi:
+  ftp://ftp1.digi.com/support/firmware/update/
+
+If you had a Series 2 XBee, you could do something like the following:
+$ wget ftp://ftp1.digi.com/support/firmware/update/xbee_zb/XB24-ZB_2070.zip
+$ unzip XB24-ZB_2070.zip
+$ xbfwup [args...] ebl_files/XB24-ZB_2070.ebl
+Entering bootloader...
+Beginning programming...
+Read 95424 byte firmware file (746 blocks).
+..................................................   50
+..................................................  100
+..................................................  150
+..................................................  200
+..................................................  250
+..................................................  300
+..................................................  350
+..................................................  400
+..................................................  450
+..................................................  500
+..................................................  550
+..................................................  600
+..................................................  650
+..................................................  700
+..............................................
+Programming complete, running uploaded firmware...
