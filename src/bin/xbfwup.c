@@ -33,6 +33,9 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define XB_FRAME_TYPE_AT_CMD		0x08
+#define XB_FRAME_TYPE_AT_CMD_RESPONSE	0x88
+
 #define AP_MODE_AT	0
 #define AP_MODE_API	1
 #define AP_MODE_API_ESC	2
@@ -98,21 +101,35 @@ xb_write(int fd, const char *buf, size_t count) {
 int
 xb_send_command(int fd, char *cmd, const char *format, ...) {
 	char buf[256];
-	size_t off;
+	int i;
 	ssize_t ret;
+	uint8_t csum;
+	uint16_t off, len;
 	va_list ap;
 
-//	if (api_mode)
-//	else
-	buf[0] = 'A';
-	buf[1] = 'T';
-	buf[2] = cmd[0];
-	buf[3] = cmd[1];
-	off = 4;
+	if (api_mode) {
+		buf[0] = '\x7E';
+		/* fill buf[1..2] later */
+		buf[3] = XB_FRAME_TYPE_AT_CMD;
+		buf[4] = 0;
+		buf[5] = cmd[0];
+		buf[6] = cmd[1];
+		off = 7;
+	} else {
+		buf[0] = 'A';
+		buf[1] = 'T';
+		buf[2] = cmd[0];
+		buf[3] = cmd[1];
+		off = 4;
+	}
 
 	if (*format) {
 		va_start(ap, format);
-		ret = vsnprintf(buf + off, sizeof(buf) - off, format, ap);
+		if (api_mode) {
+			ret = 0;
+		} else {
+			ret = vsnprintf(buf + off, sizeof(buf) - off, format, ap);
+		}
 		va_end(ap);
 
 		if (ret < 0 || ret >= sizeof(buf)) {
@@ -122,15 +139,23 @@ xb_send_command(int fd, char *cmd, const char *format, ...) {
 		off += ret;
 	}
 
-//	if (api_mode)
-//	else
-	buf[off++] = '\r';
+	if (api_mode) {
+		len = htobe16(off - 3);
+		memcpy(buf + 1, &len, 2);
+
+		for(csum = 0, i = 3; i < off; i++) {
+			csum += buf[i];
+		}
+		buf[off++] = (char)(0xFF - csum);
+	} else {
+		buf[off++] = '\r';
+	}
 
 	ret = xb_write(fd, buf, off);
 
-//	if (api_mode)
-//	else
-	wait_for_ok(fd);
+	if (!api_mode) {
+		wait_for_ok(fd);
+	}
 
 	return ret;
 }
@@ -332,11 +357,13 @@ main(int argc, char *argv[]) {
 //	if (!recovery_mode)
 
 	/* enter command mode */
-	printf("Entering AT command mode...\n");
-	sleep(1);
-	write(xbfd, "+++", 3);
-	sleep(1);
-	wait_for_ok(xbfd);
+	if (!api_mode) {
+		printf("Entering AT command mode...\n");
+		sleep(1);
+		write(xbfd, "+++", 3);
+		sleep(1);
+		wait_for_ok(xbfd);
+	}
 
 	printf("Entering bootloader...\n");
 
