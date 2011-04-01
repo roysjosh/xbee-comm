@@ -249,6 +249,13 @@ xb_firmware_update(int xbfd, int fwfd) {
 
 	/* send it */
 	for(block = 1, i = 0; i < len / 128; block++, i++) {
+		/* display progress */
+		printf(".");
+		if ((i + 1) % 50 == 0) {
+			printf(" %4i\n", (i + 1));
+		}
+		fflush(stdout);
+
 		header[0] = (uint8_t)'\x01'; /* SOH */
 		header[1] = (uint8_t)block;
 		header[2] = (uint8_t)(255 - block);
@@ -271,21 +278,17 @@ xb_firmware_update(int xbfd, int fwfd) {
 			return -1;
 		}
 
+		if ((i + 1) == len / 128) {
+			printf("\nWaiting for upload confirmation...\n");
+			fflush(stdout);
+		}
+
 		/* read ACK (0x06); use read for speed! */
 		if (read(xbfd, reply, 1) <= 0 || *reply != '\x06') {
 			warnx("failed to transfer block %i: %02x", i, *reply);
 			return -1;
 		}
-
-		/* display progress */
-		printf(".");
-		if ((i + 1) % 50 == 0) {
-			printf(" %4i\n", (i + 1));
-		}
-		fflush(stdout);
 	}
-
-	printf("\n");
 
 	/* write EOT (0x04) */
 	if (xb_write(xbfd, "\x04", 1)) {
@@ -396,14 +399,22 @@ main(int argc, char *argv[]) {
 		err(EXIT_FAILURE, "failed to set 115200bps, VMIN/VTIME");
 	}
 
-	for(i = 0; i < 20; i++) {
+	for(i = 0; i < 100; i++) {
+		if (i % 5 == 0) {
+			printf(".");
+			fflush(stdout);
+		}
 		xb_write(xbfd, "\r", 1);
 		if ( (ret = xb_read(xbfd, buf, sizeof(buf))) > 0) {
 			break;
 		}
 	}
+	printf("\n");
 
 	/* check for "BL >" prompt */
+	if (ret < 6 || strncmp(buf + ret - 6, "BL > \0", 6)) {
+		errx(EXIT_FAILURE, "failed to read bootloader prompt");
+	}
 
 	/* restore "wait forever" settings */
 	serial.c_cc[VMIN] = 1;
