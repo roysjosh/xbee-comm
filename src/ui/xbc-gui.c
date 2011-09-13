@@ -12,8 +12,16 @@
 enum {
 	CONF_COL_NAME = 0,
 	CONF_COL_ABBR,
-	CONF_COL_VALUE,
+	CONF_COL_VALUE_DEF,
+	CONF_COL_VALUE_DESC,
+	CONF_COL_DESC,
 	CONF_NUM_COLS
+};
+
+struct xbc_gui_ctx {
+	GtkWidget *window;
+	GtkWidget *tree;
+	GtkWidget *text;
 };
 
 void
@@ -29,7 +37,9 @@ store_add_command(GtkTreeStore *store, GtkTreeIter *iter, char *params[CONF_NUM_
 	gtk_tree_store_set(store, &child,
 		CONF_COL_NAME, params[CONF_COL_NAME],
 		CONF_COL_ABBR, params[CONF_COL_ABBR],
-		CONF_COL_VALUE, params[CONF_COL_VALUE],
+		CONF_COL_VALUE_DEF, params[CONF_COL_VALUE_DEF],
+		CONF_COL_VALUE_DESC, params[CONF_COL_VALUE_DESC],
+		CONF_COL_DESC, params[CONF_COL_DESC],
 		-1);
 }
 
@@ -164,16 +174,33 @@ read_conf_file(GtkTreeStore *store, const char *filename) {
 					break;
 				}
 				*(tok++) = '\0';
-				params[CONF_COL_VALUE] = line;
+				params[CONF_COL_VALUE_DEF] = line;
 				line = ++tok;
 				/* command name */
-				if(!(tok = strchr(line, ']'))) {
+				if(!(tok = strchr(line, ']')) || *(tok + 1) != '[') {
 					g_warning("failed to find command name");
 					break;
 				}
 				*(tok++) = '\0';
 				params[CONF_COL_NAME] = line;
-				/* add the command*/
+				line = ++tok;
+				/* command value description */
+				if(!(tok = strchr(line, ']')) || *(tok + 1) != '[') {
+					g_warning("failed to find command value description");
+					break;
+				}
+				*(tok++) = '\0';
+				params[CONF_COL_VALUE_DESC] = line;
+				line = ++tok;
+				/* command description */
+				if(!(tok = strchr(line, ']'))) {
+					g_warning("failed to find command description");
+					break;
+				}
+				*(tok++) = '\0';
+				params[CONF_COL_DESC] = line;
+				line = ++tok;
+				/* add the command */
 				store_add_command(store, &iter, params);
 				break;
 			}
@@ -188,13 +215,48 @@ read_conf_file(GtkTreeStore *store, const char *filename) {
 	return 0;
 }
 
+gboolean
+row_select_cb(GtkTreeSelection *sel, GtkTreeModel *model, GtkTreePath *path,
+		gboolean cur_selected, gpointer userdata) {
+	gchar *desc;
+	GtkTextBuffer *buffer;
+	GtkTextView *text;
+	GtkTreeIter iter;
+	struct xbc_gui_ctx *gctx;
+
+	if(gtk_tree_path_get_depth(path) == 1) {
+		return FALSE;
+	}
+
+	if(gtk_tree_model_get_iter(model, &iter, path)) {
+		gtk_tree_model_get(model, &iter, CONF_COL_DESC, &desc, -1);
+
+		gctx = (struct xbc_gui_ctx *)userdata;
+		text = GTK_TEXT_VIEW(gctx->text);
+		buffer = gtk_text_view_get_buffer(text);
+
+		if(!cur_selected) { /* this row is being selected */
+			gtk_text_buffer_set_text(buffer, desc, -1);
+		}
+		else {
+			gtk_text_buffer_set_text(buffer, "", 0);
+		}
+
+		g_free(desc);
+	}
+
+	return TRUE;
+}
+
 GtkTreeStore *
 create_and_fill_store() {
 	GtkTreeStore *store = gtk_tree_store_new(
 		CONF_NUM_COLS,
 		G_TYPE_STRING, /* command name */
 		G_TYPE_STRING, /* abbreviation */
-		G_TYPE_STRING  /* current value */
+		G_TYPE_STRING, /* default value */
+		G_TYPE_STRING, /* value description */
+		G_TYPE_STRING  /* command description */
 	);
 
 	read_conf_file(store, "XB24-ZB_2070.mxi");
@@ -229,51 +291,77 @@ set_main_view_columns(GtkTreeView *view) {
 	column = gtk_tree_view_column_new_with_attributes(
 			"Value",
 			renderer,
-			"text", CONF_COL_VALUE,
+			"text", CONF_COL_VALUE_DEF,
 			NULL);
 	gtk_tree_view_column_set_resizable(column, TRUE);
 	gtk_tree_view_append_column(view, column);
 }
 
 void
-setup_tree_view(GtkTreeView *view) {
+setup_tree_view(GtkTreeView *view, struct xbc_gui_ctx *gctx) {
+	GtkTreeSelection *selection;
 	GtkTreeStore *store = create_and_fill_store();
 
 	gtk_tree_view_set_model(view, GTK_TREE_MODEL(store));
 	g_object_unref(G_OBJECT(store));
 
+	/* create column headers */
 	set_main_view_columns(view);
+
+	/* at most one row may be selected at a time */
+	selection = gtk_tree_view_get_selection(view);
+	gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
+
+	/* hook up the row select callback */
+	gtk_tree_selection_set_select_function(selection, row_select_cb, gctx, NULL);
 }
 
-int
-main(int argc, char *argv[]) {
+gboolean
+xbc_gui_init(struct xbc_gui_ctx *gctx) {
 	GtkBuilder *builder;
-	GtkWidget *window, *tree;
 	GError *error = NULL;
 
-	gtk_init(&argc, &argv);
 	builder = gtk_builder_new();
 
 	if(!gtk_builder_add_from_file(builder, "xbee-comm.glade", &error)) {
 		g_warning("%s", error->message);
 		g_free(error);
-		return 1;
+		return FALSE;
 	}
 
-	gtk_builder_connect_signals(builder, NULL);
+	gctx->window = GTK_WIDGET(gtk_builder_get_object(builder, "main_window"));
+	gctx->tree   = GTK_WIDGET(gtk_builder_get_object(builder, "conf_treeview"));
+	gctx->text   = GTK_WIDGET(gtk_builder_get_object(builder, "conf_help"));
 
-	window = GTK_WIDGET(gtk_builder_get_object(builder, "main_window"));
-	tree   = GTK_WIDGET(gtk_builder_get_object(builder, "conf_treeview"));
+	/* pass gctx to signal handlers */
+	gtk_builder_connect_signals(builder, gctx);
 
-	setup_tree_view(GTK_TREE_VIEW(tree));
+	setup_tree_view(GTK_TREE_VIEW(gctx->tree), gctx);
 
 	g_object_unref(G_OBJECT(builder));
 
+	return TRUE;
+}
+
+int
+main(int argc, char *argv[]) {
+	struct xbc_gui_ctx *gui_ctx;
+
+	gtk_init(&argc, &argv);
+
+	/* setup gui */
+	gui_ctx = g_slice_new(struct xbc_gui_ctx);
+	if(!xbc_gui_init(gui_ctx)) {
+		return 1;
+	}
+
 	/* all done setting up the main window, so make it visible! */
-	gtk_widget_show(window);
+	gtk_widget_show(gui_ctx->window);
 
 	/* loop. */
 	gtk_main();
+
+	g_slice_free(struct xbc_gui_ctx, gui_ctx);
 
 	return 0;
 }
