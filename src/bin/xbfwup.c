@@ -306,6 +306,23 @@ xb_firmware_update(int xbfd, int fwfd) {
 }
 
 void
+serial_setup(int xbfd, struct termios *serial)
+{
+	int ret;
+
+	/*
+	 * 9600 is the default baudrate for the XBee in API/AT mode.
+	 * The serial paramters should be 8-N-1.
+	 */
+
+	bzero(serial, sizeof(*serial));
+	serial->c_cflag = B9600 | CS8 | CLOCAL | CREAD;
+	if (tcsetattr(xbfd, TCSANOW, serial)) {
+		err(EXIT_FAILURE, "error setting baudrate 9600 & 8N1");
+	}
+}
+
+void
 usage(const char *argv0, int status) {
 	fprintf(stderr, "Usage: %s [-A api_mode] [-d /dev/ttyX] firmware.ebl\n", argv0);
 	exit(status);
@@ -357,6 +374,8 @@ main(int argc, char *argv[]) {
 		err(EXIT_FAILURE, "failed to get terminal attributes");
 	}
 
+	serial_setup(xbfd, &serial);
+
 //	if (!recovery_mode)
 
 	/* enter command mode */
@@ -372,6 +391,14 @@ main(int argc, char *argv[]) {
 
 	/* start the power cycle */
 	xb_send_command(xbfd, "FR", "");
+
+	/* 
+	 * In API mode, wait for while before sending in the break
+	 * sequence.  Sending the break immediately causes the XBee
+	 * not to recognize the AT command.
+	 */
+	if (api_mode)
+		usleep(100000);
 
 	/* assert DTR, clear RTS */
 	i = TIOCM_DTR | TIOCM_CTS;
