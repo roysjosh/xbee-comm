@@ -306,6 +306,23 @@ xb_firmware_update(int xbfd, int fwfd) {
 }
 
 void
+serial_setup(int xbfd, struct termios *serial)
+{
+	int ret;
+
+	/*
+	 * 9600 is the default baudrate for the XBee in API/AT mode.
+	 * The serial paramters should be 8-N-1.
+	 */
+
+	bzero(serial, sizeof(*serial));
+	serial->c_cflag = B9600 | CS8 | CLOCAL | CREAD;
+	if (tcsetattr(xbfd, TCSANOW, serial)) {
+		err(EXIT_FAILURE, "error setting baudrate 9600 & 8N1");
+	}
+}
+
+void
 usage(const char *argv0, int status) {
 	fprintf(stderr, "Usage: %s [-A api_mode] [-d /dev/ttyX] firmware.ebl\n", argv0);
 	exit(status);
@@ -356,6 +373,8 @@ main(int argc, char *argv[]) {
 	if (tcgetattr(xbfd, &serial)) {
 		err(EXIT_FAILURE, "failed to get terminal attributes");
 	}
+
+	serial_setup(xbfd, &serial);
 
 //	if (!recovery_mode)
 
