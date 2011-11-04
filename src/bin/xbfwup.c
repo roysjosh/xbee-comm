@@ -392,6 +392,14 @@ main(int argc, char *argv[]) {
 	/* start the power cycle */
 	xb_send_command(xbfd, "FR", "");
 
+	/* 
+	 * In API mode, wait for while before sending in the break
+	 * sequence.  Sending the break immediately causes the XBee
+	 * not to recognize the AT command.
+	 */
+	if (api_mode)
+		usleep(100000);
+
 	/* assert DTR, clear RTS */
 	i = TIOCM_DTR | TIOCM_CTS;
 	ioctl(xbfd, TIOCMSET, &i);
