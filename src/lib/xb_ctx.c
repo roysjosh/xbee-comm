@@ -17,6 +17,7 @@
 
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -87,6 +88,7 @@ struct buffer *
 xb_wait_for_reply(struct xb_ctx *xctx, uint8_t frame_id) {
 	ssize_t ret;
 	struct buffer *buf;
+	uint16_t len;
 
 	buf = buffer_new(512);
 	if (!buf) {
@@ -94,13 +96,26 @@ xb_wait_for_reply(struct xb_ctx *xctx, uint8_t frame_id) {
 	}
 
 	/* XXX actually look for frame_id (if API) or OK\r (if AT) here */
-	ret = read(xctx->xbfd, buf->data, buf->size);
-	if (ret < 0) {
-		free(buf);
-		return NULL;
-	}
+	do {
+		ret = read(xctx->xbfd, buf->data + buf->writepos, buf->size - buf->writepos);
+		if (ret < 0) {
+			free(buf);
+			return NULL;
+		}
 
-	buf->writepos = (uint64_t)ret;
+		buf->writepos += (uint64_t)ret;
+
+		if (xctx->api_mode == XB_AT) {
+			break;
+		}
+		else if (buf->data[0] == 0x7e) {
+			memcpy(&len, buf->data + 1, 2);
+			len = be16toh(len);
+			if (buf->writepos >= len + 4) {
+				break;
+			}
+		}
+	} while(buf->writepos != buf->size);
 
 	return buf;
 }
