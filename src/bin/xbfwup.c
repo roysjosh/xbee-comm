@@ -33,14 +33,8 @@
 #include <termios.h>
 #include <unistd.h>
 
-#define XB_FRAME_TYPE_AT_CMD		0x08
-#define XB_FRAME_TYPE_AT_CMD_RESPONSE	0x88
+#include "xb_ctx.h"
 
-#define AP_MODE_AT	0
-#define AP_MODE_API	1
-#define AP_MODE_API_ESC	2
-
-int api_mode = 0;
 extern char *optarg;
 extern int optind;
 
@@ -96,68 +90,6 @@ xb_write(int fd, const char *buf, size_t count) {
 	}
 
 	return 0;
-}
-
-int
-xb_send_command(int fd, char *cmd, const char *format, ...) {
-	char buf[256];
-	int i;
-	ssize_t ret;
-	uint8_t csum;
-	uint16_t off, len;
-	va_list ap;
-
-	if (api_mode) {
-		buf[0] = '\x7E';
-		/* fill buf[1..2] later */
-		buf[3] = XB_FRAME_TYPE_AT_CMD;
-		buf[4] = 0;
-		buf[5] = cmd[0];
-		buf[6] = cmd[1];
-		off = 7;
-	} else {
-		buf[0] = 'A';
-		buf[1] = 'T';
-		buf[2] = cmd[0];
-		buf[3] = cmd[1];
-		off = 4;
-	}
-
-	if (*format) {
-		va_start(ap, format);
-		if (api_mode) {
-			ret = 0;
-		} else {
-			ret = vsnprintf(buf + off, sizeof(buf) - off, format, ap);
-		}
-		va_end(ap);
-
-		if (ret < 0 || ret >= sizeof(buf)) {
-			return -1;
-		}
-
-		off += ret;
-	}
-
-	if (api_mode) {
-		len = htobe16(off - 3);
-		memcpy(buf + 1, &len, 2);
-
-		for(csum = 0, i = 3; i < off; i++) {
-			csum += buf[i];
-		}
-		buf[off++] = (char)(0xFF - csum);
-	} else {
-		buf[off++] = '\r';
-	}
-
-	ret = xb_write(fd, buf, off);
-
-	if (!api_mode) {
-		wait_for_ok(fd);
-	}
-
-	return ret;
 }
 
 /* http://en.wikipedia.org/wiki/Computation_of_CRC */
@@ -306,10 +238,7 @@ xb_firmware_update(int xbfd, int fwfd) {
 }
 
 void
-serial_setup(int xbfd, struct termios *serial)
-{
-	int ret;
-
+serial_setup(struct xb_ctx *xctx, struct termios *serial) {
 	/*
 	 * 9600 is the default baudrate for the XBee in API/AT mode.
 	 * The serial paramters should be 8-N-1.
@@ -317,7 +246,15 @@ serial_setup(int xbfd, struct termios *serial)
 
 	bzero(serial, sizeof(*serial));
 	serial->c_cflag = B9600 | CS8 | CLOCAL | CREAD;
-	if (tcsetattr(xbfd, TCSANOW, serial)) {
+	/* blocking reads */
+	serial->c_cc[VMIN] = 1;
+	serial->c_cc[VTIME] = 0;
+	if (xctx->api_mode == XB_AT) {
+		/* this makes reading much easier on AT mode */
+		serial->c_lflag = ICANON;
+		serial->c_iflag = ICRNL;
+	}
+	if (tcsetattr(xctx->xbfd, TCSANOW, serial)) {
 		err(EXIT_FAILURE, "error setting baudrate 9600 & 8N1");
 	}
 }
@@ -329,19 +266,135 @@ usage(const char *argv0, int status) {
 }
 
 int
-main(int argc, char *argv[]) {
-	char buf[1024];
-	const char *fwfile, *ttydev = "/dev/ttyUSB0";
-	int fwfd, xbfd, i;
+program_local(int fwfd, struct xb_ctx *xctx) {
+	char tmpbuf[512];
+	int i;
 	ssize_t ret;
+	struct buffer *buf;
 	struct termios serial;
+	uint8_t frame_id;
+
+	if (tcgetattr(xctx->xbfd, &serial)) {
+		err(EXIT_FAILURE, "failed to get terminal attributes");
+	}
+
+	serial_setup(xctx, &serial);
+
+//	if (!recovery_mode)
+
+	/* enter command mode */
+	if (!xctx->api_mode) {
+		printf("Entering AT command mode...\n");
+		sleep(1);
+		write(xctx->xbfd, "+++", 3);
+		sleep(1);
+		wait_for_ok(xctx->xbfd);
+	}
+
+	printf("Entering bootloader...\n");
+
+	/* start the power cycle */
+	if (xb_send_at_cmd(xctx, "FR", &frame_id) < 0) {
+		err(EXIT_FAILURE, "xb_send_at_cmd");
+	}
+
+	buf = xb_wait_for_reply(xctx, frame_id);
+	if (!buf) {
+		err(EXIT_FAILURE, "xb_wait_for_reply");
+	}
+	buffer_free(buf);
+
+	/* assert DTR, clear RTS */
+	i = TIOCM_DTR | TIOCM_CTS;
+	ioctl(xctx->xbfd, TIOCMSET, &i);
+
+	/* send a serial break */
+	ioctl(xctx->xbfd, TIOCSBRK);
+
+	/* wait for the power cycle to hit */
+	sleep(2);
+
+	/* clear the serial break */
+	ioctl(xctx->xbfd, TIOCCBRK);
+
+	/* RTS/CTS have an annoying habit of toggling... */
+	i = TIOCM_DTR | TIOCM_CTS;
+	ioctl(xctx->xbfd, TIOCMSET, &i);
+
+	/* send a carriage return at 115200bps */
+	cfsetspeed(&serial, B115200);
+	/* don't wait more than 1/10s for input */
+	serial.c_cc[VMIN] = 0;
+	serial.c_cc[VTIME] = 1;
+	/* clear canonical input mode */
+	serial.c_lflag = 0;
+	serial.c_iflag = 0;
+	if (tcsetattr(xctx->xbfd, TCSANOW, &serial)) {
+		err(EXIT_FAILURE, "failed to set 115200bps, VMIN/VTIME");
+	}
+
+	for(i = 0; i < 100; i++) {
+		if (i % 5 == 0) {
+			printf(".");
+			fflush(stdout);
+		}
+		xb_write(xctx->xbfd, "\r", 1);
+		if ( (ret = xb_read(xctx->xbfd, tmpbuf, sizeof(tmpbuf))) > 0) {
+			break;
+		}
+	}
+	printf("\n");
+
+	/* check for "BL >" prompt */
+	if (ret < 6 || strncmp(tmpbuf + ret - 6, "BL > \0", 6)) {
+		errx(EXIT_FAILURE, "failed to read bootloader prompt");
+	}
+
+	/* restore "wait forever" settings */
+	serial.c_cc[VMIN] = 1;
+	serial.c_cc[VTIME] = 0;
+	if (tcsetattr(xctx->xbfd, TCSANOW, &serial)) {
+		err(EXIT_FAILURE, "failed to reset VMIN/VTIME");
+	}
+
+	printf("Beginning programming...\n");
+
+	/* update! */
+	if (xb_firmware_update(xctx->xbfd, fwfd)) {
+		errx(EXIT_FAILURE, "failed to flash firmware!");
+	}
+
+	/* verify */
+
+	printf("Programming complete, running uploaded firmware...\n");
+
+	/* run the firmware */
+	xb_write(xctx->xbfd, "2", 1);
+
+	/* cleanup */
+	cfsetspeed(&serial, B9600);
+	if (tcsetattr(xctx->xbfd, TCSANOW, &serial)) {
+		err(EXIT_FAILURE, "failed to set 9600bps");
+	}
+
+	return EXIT_SUCCESS;
+}
+
+int
+main(int argc, char *argv[]) {
+	const char *fwfile, *ttydev;
+	enum xb_api_mode api_mode = XB_AT;
+	int fwfd, i;
+	struct xb_ctx *xctx;
+
+	ttydev = "/dev/ttyUSB0";
 
 	while ( (i = getopt(argc, argv, "A:d:")) != -1) {
 		switch (i) {
 		case 'A':
 			api_mode = atoi(optarg);
 
-			if (api_mode < 0 || api_mode > 2) {
+			if (api_mode > 2) {
 				usage(argv[0], EXIT_FAILURE);
 			}
 
@@ -366,112 +419,15 @@ main(int argc, char *argv[]) {
 		err(EXIT_FAILURE, "failed to open firmware file: %s", fwfile);
 	}
 
-	if ( (xbfd = open(ttydev, O_RDWR | O_NOCTTY)) < 0) {
+	xctx = xb_open(ttydev, api_mode);
+	if (!xctx) {
 		err(EXIT_FAILURE, "failed to open serial console");
 	}
 
-	if (tcgetattr(xbfd, &serial)) {
-		err(EXIT_FAILURE, "failed to get terminal attributes");
-	}
-
-	serial_setup(xbfd, &serial);
-
-//	if (!recovery_mode)
-
-	/* enter command mode */
-	if (!api_mode) {
-		printf("Entering AT command mode...\n");
-		sleep(1);
-		write(xbfd, "+++", 3);
-		sleep(1);
-		wait_for_ok(xbfd);
-	}
-
-	printf("Entering bootloader...\n");
-
-	/* start the power cycle */
-	xb_send_command(xbfd, "FR", "");
-
-	/* 
-	 * In API mode, wait for while before sending in the break
-	 * sequence.  Sending the break immediately causes the XBee
-	 * not to recognize the AT command.
-	 */
-	if (api_mode)
-		usleep(100000);
-
-	/* assert DTR, clear RTS */
-	i = TIOCM_DTR | TIOCM_CTS;
-	ioctl(xbfd, TIOCMSET, &i);
-
-	/* send a serial break */
-	ioctl(xbfd, TIOCSBRK);
-
-	/* wait for the power cycle to hit */
-	sleep(2);
-
-	/* clear the serial break */
-	ioctl(xbfd, TIOCCBRK);
-
-	/* RTS/CTS have an annoying habit of toggling... */
-	i = TIOCM_DTR | TIOCM_CTS;
-	ioctl(xbfd, TIOCMSET, &i);
-
-	/* send a carriage return at 115200bps */
-	cfsetspeed(&serial, B115200);
-	/* don't wait more than 1/10s for input */
-	serial.c_cc[VMIN] = 0;
-	serial.c_cc[VTIME] = 1;
-	if (tcsetattr(xbfd, TCSANOW, &serial)) {
-		err(EXIT_FAILURE, "failed to set 115200bps, VMIN/VTIME");
-	}
-
-	for(i = 0; i < 100; i++) {
-		if (i % 5 == 0) {
-			printf(".");
-			fflush(stdout);
-		}
-		xb_write(xbfd, "\r", 1);
-		if ( (ret = xb_read(xbfd, buf, sizeof(buf))) > 0) {
-			break;
-		}
-	}
-	printf("\n");
-
-	/* check for "BL >" prompt */
-	if (ret < 6 || strncmp(buf + ret - 6, "BL > \0", 6)) {
-		errx(EXIT_FAILURE, "failed to read bootloader prompt");
-	}
-
-	/* restore "wait forever" settings */
-	serial.c_cc[VMIN] = 1;
-	serial.c_cc[VTIME] = 0;
-	if (tcsetattr(xbfd, TCSANOW, &serial)) {
-		err(EXIT_FAILURE, "failed to reset VMIN/VTIME");
-	}
-
-	printf("Beginning programming...\n");
-
-	/* update! */
-	if (xb_firmware_update(xbfd, fwfd)) {
-		errx(EXIT_FAILURE, "failed to flash firmware!");
-	}
-
-	/* verify */
-
-	printf("Programming complete, running uploaded firmware...\n");
-
-	/* run the firmware */
-	xb_write(xbfd, "2", 1);
-
-	/* cleanup */
-	cfsetspeed(&serial, B9600);
-	if (tcsetattr(xbfd, TCSANOW, &serial)) {
-		err(EXIT_FAILURE, "failed to set 9600bps");
-	}
+	program_local(fwfd, xctx);
 
 	close(fwfd);
-	close(xbfd);
+	//xb_close(xctx);
 
 	return EXIT_SUCCESS;
 }
