@@ -18,7 +18,12 @@
 
 #define _BSD_SOURCE
 
-#include <endian.h>
+#ifdef __APPLE__
+#   include <machine/endian.h>
+#else
+#   include <endian.h>
+#endif
+
 #include <err.h>
 #include <fcntl.h>
 #include <poll.h>
