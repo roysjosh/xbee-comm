@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "xb_ctx.h"
 
@@ -56,6 +57,9 @@ wait_for_ok(int fd) {
 	read(fd, buf, 1);
 }
 
+#ifdef __APPLE__
+#   define xb_read(...) read(__VA_ARGS__)
+#else
 ssize_t
 xb_read(int fd, char *buf, size_t count) {
 	ssize_t pos = 0, ret;
@@ -78,6 +82,7 @@ xb_read(int fd, char *buf, size_t count) {
 
 	return pos;
 }
+#endif
 
 ssize_t
 xb_write(int fd, const char *buf, size_t count) {
@@ -249,7 +254,9 @@ serial_setup(struct xb_ctx *xctx, struct termios *serial) {
 	 * The serial paramters should be 8-N-1.
 	 */
 
+#ifndef __APPLE__
 	bzero(serial, sizeof(*serial));
+#endif
 	serial->c_cflag = B9600 | CS8 | CLOCAL | CREAD;
 	/* blocking reads */
 	serial->c_cc[VMIN] = 1;
@@ -260,6 +267,15 @@ serial_setup(struct xb_ctx *xctx, struct termios *serial) {
 		serial->c_iflag = ICRNL;
 	}
 	if (tcsetattr(xctx->xbfd, TCSANOW, serial)) {
+        printf("Error #%d: ", errno);
+        if (errno == EBADF)
+            printf("bad file descriptor.\n");
+        else if (errno == EINTR)
+            printf("interrupted by signal.\n");
+        else if (errno == EINVAL)
+            printf("invalid optional arguments.\n");
+        else if (errno == ENOTTY)
+            printf(" arguments.\n");
 		err(EXIT_FAILURE, "error setting baudrate 9600 & 8N1");
 	}
 }
