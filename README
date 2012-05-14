@@ -1,4 +1,5 @@
 xbee-comm by Joshua Roys <roysjosh@gmail.com>
+patches for macosx support by Bernard Pratz <guyzmo{at}leloop{dot}org>
 
   git://github.com/roysjosh/xbee-comm.git
 https://github.com/roysjosh/xbee-comm
@@ -6,6 +7,9 @@ https://github.com/roysjosh/xbee-comm
 
 In order to access the xbee as a regular user, you could do the following:
 # setfacl -m u:$USERNAME:rw /dev/ttyUSB0
+
+On MacOSX, please use /dev/cu.usb* instead of /dev/tty.usb* to access the
+serial device where your XBee is plugged into.
 
 Firmware files can be downloaded from digi:
   ftp://ftp1.digi.com/support/firmware/update/

@@ -18,6 +18,16 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
+#ifdef __APPLE__
+#   ifndef be16toh
+#       define be16toh(x)      ((u_int16_t)ntohs((u_int16_t)(x)))
+#   endif
+
+#   ifndef htobe16
+#       define htobe16(x)      ((u_int16_t)htons((u_int16_t)(x)))
+#   endif
+#endif
+
 #include <stdint.h>
 
 struct buffer {
