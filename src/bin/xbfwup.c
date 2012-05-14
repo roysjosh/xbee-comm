@@ -37,7 +37,6 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
-#include <errno.h>
 
 #include "xb_ctx.h"
 
@@ -267,15 +266,6 @@ serial_setup(struct xb_ctx *xctx, struct termios *serial) {
 		serial->c_iflag = ICRNL;
 	}
 	if (tcsetattr(xctx->xbfd, TCSANOW, serial)) {
-        printf("Error #%d: ", errno);
-        if (errno == EBADF)
-            printf("bad file descriptor.\n");
-        else if (errno == EINTR)
-            printf("interrupted by signal.\n");
-        else if (errno == EINVAL)
-            printf("invalid optional arguments.\n");
-        else if (errno == ENOTTY)
-            printf(" arguments.\n");
 		err(EXIT_FAILURE, "error setting baudrate 9600 & 8N1");
 	}
 }
