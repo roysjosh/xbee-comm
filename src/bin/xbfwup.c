@@ -18,7 +18,12 @@
 
 #define _BSD_SOURCE
 
-#include <endian.h>
+#ifdef __APPLE__
+#   include <machine/endian.h>
+#else
+#   include <endian.h>
+#endif
+
 #include <err.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -51,6 +56,9 @@ wait_for_ok(int fd) {
 	read(fd, buf, 1);
 }
 
+#ifdef __APPLE__
+#   define xb_read(...) read(__VA_ARGS__)
+#else
 ssize_t
 xb_read(int fd, char *buf, size_t count) {
 	ssize_t pos = 0, ret;
@@ -73,6 +81,7 @@ xb_read(int fd, char *buf, size_t count) {
 
 	return pos;
 }
+#endif
 
 ssize_t
 xb_write(int fd, const char *buf, size_t count) {
@@ -244,7 +253,9 @@ serial_setup(struct xb_ctx *xctx, struct termios *serial) {
 	 * The serial paramters should be 8-N-1.
 	 */
 
+#ifndef __APPLE__
 	bzero(serial, sizeof(*serial));
+#endif
 	serial->c_cflag = B9600 | CS8 | CLOCAL | CREAD;
 	/* blocking reads */
 	serial->c_cc[VMIN] = 1;
