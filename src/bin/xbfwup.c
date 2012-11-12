@@ -18,9 +18,9 @@
 
 #define _BSD_SOURCE
 
-#ifdef __APPLE__
+#if defined(HAVE_MACHINE_ENDIAN_H)
 #   include <machine/endian.h>
-#else
+#elif defined(HAVE_ENDIAN_H)
 #   include <endian.h>
 #endif
 

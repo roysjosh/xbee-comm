@@ -12,6 +12,9 @@ AC_PROG_CC
 
 AC_LANG([C])
 
+# Checks for headers.
+AC_CHECK_HEADERS([endian.h machine/endian.h])
+
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
 AC_TYPE_SIZE_T
