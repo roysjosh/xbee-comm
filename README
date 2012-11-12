@@ -12,15 +12,18 @@ On MacOSX, please use /dev/cu.usb* instead of /dev/tty.usb* to access the
 serial device where your XBee is plugged into.
 
 Firmware files can be downloaded from digi:
-  ftp://ftp1.digi.com/support/firmware/update/
+  http://www.digi.com/support/productdetail?pid=3430&type=firmware
+  ftp://ftp1.digi.com/support/firmware/
 
 If you had a Series 2 XBee, you could do something like the following:
-$ wget ftp://ftp1.digi.com/support/firmware/update/xbee_zb/XB24-ZB_2070.zip
-$ unzip XB24-ZB_2070.zip
-$ xbfwup [args...] ebl_files/XB24-ZB_2070.ebl
+$ wget http://ftp1.digi.com/support/firmware/82001817_F.zip
+$ unzip 82001817_F.zip
+$ xbfwup [args...] ebl_files/XB24-ZB_21A0.ebl
+Entering AT command mode...
 Entering bootloader...
+.....
 Beginning programming...
-Read 95424 byte firmware file (746 blocks).
+Read 100224 byte firmware file (783 blocks).
 ..................................................   50
 ..................................................  100
 ..................................................  150
@@ -35,5 +38,7 @@ Read 95424 byte firmware file (746 blocks).
 ..................................................  600
 ..................................................  650
 ..................................................  700
-..............................................
+..................................................  750
+.................................
+Waiting for upload confirmation...
 Programming complete, running uploaded firmware...
