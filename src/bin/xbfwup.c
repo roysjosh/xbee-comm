@@ -283,7 +283,9 @@ program_local(int fwfd, struct xb_ctx *xctx) {
 	ssize_t ret;
 	struct buffer *buf;
 	struct termios serial;
+	struct xb_buffer *xbuf;
 	uint8_t frame_id;
+	uint32_t xb_sl;
 
 	if (tcgetattr(xctx->xbfd, &serial)) {
 		err(EXIT_FAILURE, "failed to get terminal attributes");
@@ -304,6 +306,41 @@ program_local(int fwfd, struct xb_ctx *xctx) {
 
 	printf("Entering bootloader...\n");
 
+if (!xctx->api_mode) { // XXX delete this later
+	/* get SL for AT%P */
+	if (xb_send_at_cmd(xctx, "SL", &frame_id) < 0) {
+		err(EXIT_FAILURE, "xb_send_at_cmd");
+	}
+
+	buf = xb_wait_for_reply(xctx, frame_id);
+	if (!buf) {
+		err(EXIT_FAILURE, "xb_wait_for_reply");
+	}
+
+	/* FIXME for API mode */
+	sscanf(buf->data, "%X\n", &xb_sl);
+	printf("SL: %08X\n", xb_sl);
+	xb_sl += 0xDB8A;
+	xb_sl &= 0x3FFF;
+
+	buffer_free(buf);
+
+	xbuf = xb_create_at_cmd(xctx, "%P", 0);
+	if (!xbuf) {
+		err(EXIT_FAILURE, "xb_create_at_cmd");
+	}
+	xb_buffer_put_uint16(xbuf, (uint16_t)xb_sl);
+	if (xb_send(xctx, xbuf) < 0) {
+		err(EXIT_FAILURE, "xb_send");
+	}
+	xb_buffer_free(xbuf);
+
+	buf = xb_wait_for_reply(xctx, 0);
+	if (!buf) {
+		err(EXIT_FAILURE, "xb_wait_for_reply");
+	}
+	buffer_free(buf);
+} else { // XXX delete this later
 	/* start the power cycle */
 	if (xb_send_at_cmd(xctx, "FR", &frame_id) < 0) {
 		err(EXIT_FAILURE, "xb_send_at_cmd");
@@ -331,6 +368,7 @@ program_local(int fwfd, struct xb_ctx *xctx) {
 	/* RTS/CTS have an annoying habit of toggling... */
 	i = TIOCM_DTR | TIOCM_CTS;
 	ioctl(xctx->xbfd, TIOCMSET, &i);
+} // XXX delete this later
 
 	/* send a carriage return at 115200bps */
 	cfsetspeed(&serial, B115200);

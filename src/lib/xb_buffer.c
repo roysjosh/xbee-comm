@@ -284,16 +284,16 @@ xb_buffer_as_at(struct xb_buffer *xbuf) {
 			//buffer_put_data(buf, valptr->value.data, valptr->len);
 			break;
 		case XB_BUFFER_TYPE_U8:
-			buffer_sprintf(buf, "%hhu", valptr->value.u8);
+			buffer_sprintf(buf, "%02hhX", valptr->value.u8);
 			break;
 		case XB_BUFFER_TYPE_U16:
-			buffer_sprintf(buf, "%hu", valptr->value.u16);
+			buffer_sprintf(buf, "%04hX", valptr->value.u16);
 			break;
 		case XB_BUFFER_TYPE_U32:
-			buffer_sprintf(buf, "%u", valptr->value.u32);
+			buffer_sprintf(buf, "%08X", valptr->value.u32);
 			break;
 		case XB_BUFFER_TYPE_U64:
-			buffer_sprintf(buf, "%lu", valptr->value.u64);
+			buffer_sprintf(buf, "%016lX", valptr->value.u64);
 			break;
 		case XB_BUFFER_TYPE_AT_COMMAND:
 			buffer_sprintf(buf, "AT%c%c", valptr->value.at_cmd[0],
