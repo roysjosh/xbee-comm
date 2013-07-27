@@ -21,6 +21,11 @@ AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
 AC_TYPE_UINT32_T
 
+# Checks for libraries.
+PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
+AC_CHECK_LIB([crypto], [EVP_BytesToKey], ,
+	[AC_MSG_ERROR([Cannot find required OpenSSL function], 1)])
+
 # Checks for library functions.
 AC_FUNC_SELECT_ARGTYPES
 
