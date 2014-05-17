@@ -5,6 +5,11 @@ patches for macosx support by Bernard Pratz <guyzmo{at}leloop{dot}org>
 https://github.com/roysjosh/xbee-comm
   irc://irc.freenode.net/#xbee-comm
 
+Build instructions:
+xbee-comm$ autoreconf -vi .
+xbee-comm$ ./configure
+xbee-comm$ make
+
 In order to access the xbee as a regular user, you could do the following:
 # setfacl -m u:$USERNAME:rw /dev/ttyUSB0
 
