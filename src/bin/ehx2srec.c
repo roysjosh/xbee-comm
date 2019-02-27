@@ -128,7 +128,7 @@ main(int argc, char *argv[]) {
 	ssize_t sret;
 	uint8_t keybuffer[24], ivbuffer[8];
 	unsigned char buf[4096], decbuf[4096];
-	EVP_CIPHER_CTX ectx;
+	EVP_CIPHER_CTX *ectx;
 
 	if (argc < 3) {
 		errx(EXIT_FAILURE, "<xb24_15_4_ABCD.ehx> <out.hex>");
@@ -151,8 +151,11 @@ main(int argc, char *argv[]) {
 	}
 
 	/* decrypt & decode */
-	EVP_CIPHER_CTX_init(&ectx);
-	EVP_DecryptInit_ex(&ectx, EVP_des_ede3_cbc(), NULL, keybuffer, ivbuffer);
+	if ( (ectx = EVP_CIPHER_CTX_new()) == NULL) {
+		err(EXIT_FAILURE, "EVP_CIPHER_CTX_new");
+	}
+	EVP_CIPHER_CTX_init(ectx);
+	EVP_DecryptInit_ex(ectx, EVP_des_ede3_cbc(), NULL, keybuffer, ivbuffer);
 
 	while (infd > 0) {
 		if ( (sret = read(infd, buf, sizeof(buf))) < 0) {
@@ -161,11 +164,11 @@ main(int argc, char *argv[]) {
 		if (!sret) { /* EOF */
 			close(infd);
 			infd = -1;
-			if (!EVP_DecryptFinal_ex(&ectx, decbuf, &declen)) {
+			if (!EVP_DecryptFinal_ex(ectx, decbuf, &declen)) {
 				errx(EXIT_FAILURE, "EVP_DecryptFinal_ex");
 			}
 		} else {
-			if (!EVP_DecryptUpdate(&ectx, decbuf, &declen, buf, sret)) {
+			if (!EVP_DecryptUpdate(ectx, decbuf, &declen, buf, sret)) {
 				errx(EXIT_FAILURE, "EVP_DecryptUpdate");
 			}
 		}
@@ -177,6 +180,8 @@ main(int argc, char *argv[]) {
 			err(EXIT_FAILURE, "write");
 		}
 	}
+
+	EVP_CIPHER_CTX_free(ectx);
 
 	return EXIT_SUCCESS;
 }
